@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Counter</title>
+<style>
+  :root{--bg:#f4f6fb;--card:#fff;--ink:#16233f;--mute:#6b7690;--line:#dde3f0;--pri:#2457d6;--ok:#12805c;--warn:#b45309;--bad:#c0262d}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1524;--card:#18203a;--ink:#e8ecf8;--mute:#93a0c0;--line:#2a3558;--pri:#6c93ff;--ok:#3ecf9a;--warn:#f0a03c;--bad:#ff7a80}}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,"Noto Sans Thai","Sarabun",sans-serif;background:var(--bg);color:var(--ink)}
+  header{display:flex;align-items:center;gap:16px;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  header h1{font-size:18px;margin:0}
+  nav{display:flex;gap:6px;margin-left:auto}
+  nav button{border:1px solid var(--line);background:transparent;color:var(--ink);padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit}
+  nav button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+  main{max-width:960px;margin:0 auto;padding:18px 16px 60px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card h2{font-size:15px;margin:0 0 10px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
+  th{color:var(--mute);font-weight:600;font-size:12px}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  .empty{color:var(--mute);padding:18px 0;text-align:center;font-size:14px}
+  .total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;padding-top:12px}
+  .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  button.act{padding:10px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;font:inherit}
+  button.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+  button.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
+  .pill.ok{color:var(--ok);border-color:var(--ok)} .pill.bad{color:var(--bad);border-color:var(--bad)} .pill.warn{color:var(--warn);border-color:var(--warn)}
+  .msg{margin-top:10px;font-size:14px;color:var(--bad);min-height:1.2em}
+  .low{color:var(--bad);font-weight:600}
+  input.stock{width:74px;padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+  #modal{position:fixed;inset:0;background:rgba(10,15,30,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+  #modal.show{display:flex}
+  .sheet{background:var(--card);border-radius:14px;padding:20px;max-width:380px;width:100%;text-align:center}
+  .sheet img{width:260px;max-width:100%;border-radius:8px;background:#fff;padding:6px}
+  .big{font-size:26px;font-weight:800;margin:6px 0}
+  .hint{color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛒 Smart Counter</h1>
+  <span id="conn" class="pill warn">รอสัญญาณกล้อง</span>
+  <nav>
+    <button id="tab-shop" class="on" onclick="show('shop')">หน้าร้าน</button>
+    <button id="tab-stock" onclick="show('stock')">สต็อก</button>
+    <button id="tab-orders" onclick="show('orders')">ออเดอร์</button>
+  </nav>
+</header>
+
+<main>
+<section id="shop">
+  <div class="grid">
+    <div class="card">
+      <h2>สินค้าบนเคาน์เตอร์ (ตรวจจับสด)</h2>
+      <div id="live"></div>
+      <div class="row"><button class="act pri" id="btnScan" onclick="scan()">สแกนเข้าตะกร้า</button></div>
+      <div class="hint" style="margin-top:8px">กดสแกนเมื่อวางสินค้านิ่งแล้ว ระบบจะล็อกรายการ ณ ตอนนั้น</div>
+    </div>
+    <div class="card">
+      <h2>ตะกร้า</h2>
+      <div id="cart"></div>
+      <div class="row">
+        <button class="act ok" id="btnPay" onclick="checkout()" disabled>ชำระเงิน (QR PromptPay)</button>
+        <button class="act" onclick="clearCart()">ล้างตะกร้า</button>
+      </div>
+      <div class="msg" id="cartMsg"></div>
+    </div>
+  </div>
+</section>
+
+<section id="stock" hidden>
+  <div class="card">
+    <h2>สินค้าคงเหลือในคลัง</h2>
+    <table>
+      <thead><tr><th>สินค้า</th><th class="n">ราคา</th><th class="n">คงเหลือ</th><th class="n">จองอยู่</th><th class="n">พร้อมขาย</th><th class="n">ปรับจำนวน</th></tr></thead>
+      <tbody id="stockBody"></tbody>
+    </table>
+    <div class="hint" style="margin-top:8px">"จองอยู่" = ออเดอร์ที่สร้าง QR แล้วแต่ยังไม่ยืนยันชำระเงิน จะคืนอัตโนมัติเมื่อหมดเวลา</div>
+  </div>
+</section>
+
+<section id="orders" hidden>
+  <div class="card">
+    <h2>ออเดอร์ล่าสุด</h2>
+    <div id="ordersBody"></div>
+  </div>
+</section>
+</main>
+
+<div id="modal">
+  <div class="sheet">
+    <div class="hint" id="mOrder"></div>
+    <div class="big" id="mTotal"></div>
+    <img id="mQr" alt="QR PromptPay">
+    <div class="hint" id="mTimer" style="margin:8px 0"></div>
+    <div id="mStatus"></div>
+    <div class="row" style="justify-content:center">
+      <button class="act ok" id="mConfirm" onclick="confirmPaid()">ยืนยันว่าชำระเงินแล้ว</button>
+      <button class="act" id="mCancel" onclick="cancelOrder()">ยกเลิก</button>
+      <button class="act pri" id="mClose" onclick="closeModal()" hidden>ปิด</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const baht = n => '฿' + Number(n).toLocaleString('th-TH');
+let currentOrder = null, orderTimer = null;
+
+function td(text, cls){ const e=document.createElement('td'); if(cls) e.className=cls; e.textContent=text; return e; }
+function renderLines(box, lines, total, emptyMsg){
+  box.replaceChildren();
+  if(!lines.length){ const d=document.createElement('div'); d.className='empty'; d.textContent=emptyMsg; box.append(d); return; }
+  const t=document.createElement('table');
+  t.innerHTML='<thead><tr><th>สินค้า</th><th class="n">ราคา</th><th class="n">จำนวน</th><th class="n">รวม</th></tr></thead>';
+  const tb=document.createElement('tbody');
+  for(const l of lines){
+    const tr=document.createElement('tr');
+    tr.append(td(l.name), td(baht(l.price),'n'), td('× '+l.qty,'n'), td(baht(l.subtotal),'n'));
+    if(l.qty>l.available) tr.lastChild.className='n low';
+    tb.append(tr);
+  }
+  t.append(tb); box.append(t);
+  const tot=document.createElement('div'); tot.className='total';
+  tot.innerHTML='<span>รวมทั้งสิ้น</span><span></span>'; tot.lastChild.textContent=baht(total);
+  box.append(tot);
+}
+async function api(path, opt){
+  const r = await fetch(path, opt);
+  let j = {}; try{ j = await r.json(); }catch(e){}
+  if(!r.ok) throw new Error(j.error || ('HTTP '+r.status));
+  return j;
+}
+const post = (p, body) => api(p, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+
+function show(name){
+  for(const s of ['shop','stock','orders']){ $(s).hidden = s!==name; $('tab-'+s).classList.toggle('on', s===name); }
+  if(name==='stock') loadStock(); if(name==='orders') loadOrders();
+}
+
+async function pollLive(){
+  try{
+    const j = await api('/api/live');
+    const c = $('conn');
+    if(!j.connected){ c.className='pill warn'; c.textContent='รอสัญญาณกล้อง'; }
+    else if(!j.fresh){ c.className='pill warn'; c.textContent='ไม่มีข้อมูลใหม่ '+Math.round(j.age)+' วิ'; }
+    else { c.className='pill ok'; c.textContent='กล้องเชื่อมต่อ'; }
+    renderLines($('live'), j.lines, j.total, !j.connected ? 'ยังไม่ได้รับข้อมูลจากกล้อง' : 'ยังไม่พบสินค้าบนเคาน์เตอร์');
+    if(j.connected && !j.fresh && j.lines.length){ const d=document.createElement('div'); d.className='hint'; d.textContent='แสดงผลตรวจจับล่าสุด (ไม่ได้อัปเดตมา '+Math.round(j.age)+' วินาที)'; $('live').append(d); }
+    const u = Object.keys(j.unknown||{});
+    if(u.length){ const d=document.createElement('div'); d.className='hint'; d.textContent='พบคลาสที่ไม่มีในตารางสินค้า: '+u.join(', '); $('live').append(d); }
+    $('btnScan').disabled = !j.lines.length;
+  }catch(e){}
+}
+async function loadCart(){
+  const j = await api('/api/cart');
+  renderLines($('cart'), j.lines, j.total, 'ตะกร้าว่าง กดสแกนเพื่อเพิ่มสินค้า');
+  $('btnPay').disabled = !j.lines.length || !j.stock_ok;
+  $('cartMsg').textContent = (j.lines.length && !j.stock_ok) ? 'มีสินค้าบางรายการในคลังไม่พอ' : '';
+}
+async function scan(){ try{ await post('/api/cart/scan'); $('cartMsg').textContent=''; loadCart(); }catch(e){ $('cartMsg').textContent=e.message; } }
+async function clearCart(){ await post('/api/cart/clear'); $('cartMsg').textContent=''; loadCart(); }
+
+async function checkout(){
+  try{
+    const o = await post('/api/checkout');
+    openModal(o); loadCart();
+  }catch(e){ $('cartMsg').textContent = e.message; loadCart(); }
+}
+function openModal(o){
+  currentOrder = o;
+  $('mOrder').textContent = 'ออเดอร์ #'+o.id;
+  $('mTotal').textContent = baht(o.total);
+  $('mQr').src = '/api/orders/'+o.id+'/qr.png?'+Date.now();
+  setModalState(o);
+  $('modal').classList.add('show');
+  clearInterval(orderTimer);
+  orderTimer = setInterval(refreshOrder, 1000);
+}
+function setModalState(o){
+  currentOrder = o;
+  const pending = o.status==='pending';
+  $('mConfirm').hidden = !pending; $('mCancel').hidden = !pending; $('mClose').hidden = pending;
+  $('mQr').style.opacity = pending ? 1 : .25;
+  const st = $('mStatus');
+  if(o.status==='paid') st.innerHTML='<span class="pill ok">ชำระเงินแล้ว — ตัดสต็อกเรียบร้อย</span>';
+  else if(o.status==='expired') st.innerHTML='<span class="pill bad">หมดเวลา — คืนสต็อกแล้ว</span>';
+  else if(o.status==='cancelled') st.innerHTML='<span class="pill warn">ยกเลิกแล้ว — คืนสต็อกแล้ว</span>';
+  else st.innerHTML='<span class="pill warn">รอการชำระเงิน (จองสินค้าไว้แล้ว)</span>';
+}
+async function refreshOrder(){
+  if(!currentOrder) return;
+  try{
+    const o = await api('/api/orders/'+currentOrder.id);
+    setModalState(o);
+    if(o.status==='pending'){
+      const left = Math.max(0, Math.round(o.expires_at - o.now));
+      $('mTimer').textContent = 'สแกนจ่ายภายใน '+Math.floor(left/60)+':'+String(left%60).padStart(2,'0')+' นาที';
+    } else { $('mTimer').textContent=''; clearInterval(orderTimer); }
+  }catch(e){}
+}
+async function confirmPaid(){ try{ setModalState(await post('/api/orders/'+currentOrder.id+'/confirm')); $('mTimer').textContent=''; clearInterval(orderTimer);}catch(e){ alert(e.message); refreshOrder(); } }
+async function cancelOrder(){ try{ setModalState(await post('/api/orders/'+currentOrder.id+'/cancel')); $('mTimer').textContent=''; clearInterval(orderTimer);}catch(e){ alert(e.message); refreshOrder(); } }
+function closeModal(){ $('modal').classList.remove('show'); clearInterval(orderTimer); currentOrder=null; loadStock(); loadOrders(); }
+
+async function loadStock(){
+  const j = await api('/api/stock');
+  const tb = $('stockBody'); tb.replaceChildren();
+  for(const p of j.products){
+    const tr=document.createElement('tr');
+    const av = td(p.available,'n'); if(p.available<=3) av.className='n low';
+    const inp=document.createElement('input'); inp.type='number'; inp.min=0; inp.className='stock'; inp.value=p.stock;
+    const b=document.createElement('button'); b.className='act'; b.textContent='บันทึก'; b.style.marginLeft='6px';
+    b.onclick=async()=>{ try{ await post('/api/stock/'+encodeURIComponent(p.sku),{stock:inp.value}); loadStock(); }catch(e){ alert(e.message);} };
+    const c=document.createElement('td'); c.className='n'; c.append(inp,b);
+    tr.append(td(p.name), td(baht(p.price),'n'), td(p.stock,'n'), td(p.reserved,'n'), av, c);
+    tb.append(tr);
+  }
+}
+async function loadOrders(){
+  const j = await api('/api/orders');
+  const box=$('ordersBody'); box.replaceChildren();
+  if(!j.orders.length){ const d=document.createElement('div'); d.className='empty'; d.textContent='ยังไม่มีออเดอร์'; box.append(d); return; }
+  const names={pending:'รอชำระ',paid:'ชำระแล้ว',expired:'หมดเวลา',cancelled:'ยกเลิก'};
+  const cls={pending:'warn',paid:'ok',expired:'bad',cancelled:'warn'};
+  const t=document.createElement('table');
+  t.innerHTML='<thead><tr><th>#</th><th>เวลา</th><th>รายการ</th><th class="n">ยอด</th><th>สถานะ</th></tr></thead>';
+  const tb=document.createElement('tbody');
+  for(const o of j.orders){
+    const tr=document.createElement('tr');
+    const st=document.createElement('td'); const pl=document.createElement('span'); pl.className='pill '+cls[o.status]; pl.textContent=names[o.status]; st.append(pl);
+    tr.append(td('#'+o.id), td(new Date(o.created_at*1000).toLocaleString('th-TH')),
+      td(o.items.map(i=>i.name+' ×'+i.qty).join(', ')), td(baht(o.total),'n'), st);
+    tb.append(tr);
+  }
+  t.append(tb); box.append(t);
+}
+
+pollLive(); loadCart();
+setInterval(pollLive, 1000);
+</script>
+</body>
+</html>
